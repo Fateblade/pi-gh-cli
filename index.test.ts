@@ -166,7 +166,7 @@ describe("assertSafeCommand", () => {
 	test("2. repo delete with args is refused as unrecoverable", () => {
 		expect(() =>
 			assertSafeCommand({ subcommand: "repo delete", args: { yes: true } }),
-		).toThrow(/unrecoverable/);
+		).toThrow(/destructive/);
 	});
 
 	test("3. repo delete with forceDangerous is allowed", () => {
@@ -256,6 +256,89 @@ describe("formatOutput", () => {
 
 	test("4. whitespace-only is treated as empty", () => {
 		expect(formatOutput("   \n  ", "  ")).toBe("(no output)");
+	});
+});
+
+describe("security: expanded dangerous-command guard", () => {
+	test("1. extension install is refused (arbitrary code execution)", () => {
+		expect(() => assertSafeCommand({ subcommand: "extension install some/repo" })).toThrow(
+			/extension install/,
+		);
+	});
+
+	test("2. extension upgrade is refused", () => {
+		expect(() => assertSafeCommand({ subcommand: "extension upgrade" })).toThrow(/extension upgrade/);
+	});
+
+	test("3. codespace ssh/cp are refused", () => {
+		expect(() => assertSafeCommand({ subcommand: "codespace ssh codespace-name" })).toThrow(/codespace ssh/);
+		expect(() => assertSafeCommand({ subcommand: "codespace cp a b" })).toThrow(/codespace cp/);
+	});
+
+	test("4. alias set/delete and config set are refused", () => {
+		expect(() => assertSafeCommand({ subcommand: "alias set co 'pr checkout'" })).toThrow(/alias set/);
+		expect(() => assertSafeCommand({ subcommand: "alias delete co" })).toThrow(/alias delete/);
+		expect(() => assertSafeCommand({ subcommand: "config set editor vim" })).toThrow(/config set/);
+	});
+
+	test("5. gh api with -X DELETE is refused (H1 bypass fix)", () => {
+		expect(() => assertSafeCommand({ subcommand: "api -X DELETE repos/owner/repo" })).toThrow(/api DELETE/);
+	});
+
+	test("6. gh api with --method DELETE in args is refused", () => {
+		expect(() => assertSafeCommand({ subcommand: "api repos/owner/repo", args: { method: "DELETE" } })).toThrow(
+			/api DELETE/,
+		);
+	});
+
+	test("7. gh api graphql is refused (default POST)", () => {
+		expect(() => assertSafeCommand({ subcommand: "api graphql -f query='...'" })).toThrow(/api POST/);
+	});
+
+	test("8. gh api with body flags (-f) is refused (implies POST)", () => {
+		expect(() => assertSafeCommand({ subcommand: "api repos/owner/repo/issues", args: { f: { title: "x" } } })).toThrow(
+			/api POST/,
+		);
+	});
+
+	test("9. read-only gh api is allowed", () => {
+		expect(() => assertSafeCommand({ subcommand: "api repos/owner/repo" })).not.toThrow();
+		expect(() =>
+			assertSafeCommand({ subcommand: "api repos/owner/repo/issues", args: { method: "GET" } }),
+		).not.toThrow();
+		expect(() =>
+			assertSafeCommand({ subcommand: "api repos/owner/repo/issues", args: { X: "GET" } }),
+		).not.toThrow();
+	});
+
+	test("10. api mutation with forceDangerous passes assertSafeCommand", () => {
+		expect(() =>
+			assertSafeCommand({ subcommand: "api -X DELETE repos/owner/repo", forceDangerous: true }),
+		).not.toThrow();
+	});
+});
+
+describe("security: token redaction", () => {
+	test("1. ghp_ token is redacted in stdout", () => {
+		const out = formatOutput("token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456", "");
+		expect(out).toContain("gh*_REDACTED");
+		expect(out).not.toContain("ghp_");
+	});
+
+	test("2. github_pat_ token is redacted", () => {
+		const out = formatOutput("github_pat_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890", "");
+		expect(out).toContain("github_pat_REDACTED");
+		expect(out).not.toContain("github_pat_ABCD");
+	});
+
+	test("3. tokens in stderr are redacted too", () => {
+		const out = formatOutput("", "error: gho_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456");
+		expect(out).toContain("gh*_REDACTED");
+	});
+
+	test("4. commit SHAs are NOT redacted (40-hex untouched)", () => {
+		const sha = "a".repeat(40);
+		expect(formatOutput(`commit ${sha}`, "")).toContain(sha);
 	});
 });
 
@@ -419,6 +502,65 @@ describe("runGh", () => {
 		expect(exec.calls[0][1]).toContain("number,title");
 		expect(exec.calls[0][1]).toContain("--jq");
 		expect(exec.calls[0][1]).toContain(".[].title");
+	});
+});
+
+describe("runGh: enforced dangerous-command confirmation", () => {
+	const recordingUI = (answer: boolean) => {
+		const calls: [string, string][] = [];
+		return {
+			calls,
+			confirm: async (title: string, message: string) => {
+				calls.push([title, message]);
+				return answer;
+			},
+		};
+	};
+
+	test("1. dangerous op + forceDangerous + ui confirm accepted → runs", async () => {
+		const exec = makeFakeExec({ stdout: "ok", code: 0 });
+		const ui = recordingUI(true);
+		const res = await runGh({ subcommand: "repo delete", forceDangerous: true }, exec, undefined, ui);
+		expect(res.isError).toBe(false);
+		expect(exec.calls).toHaveLength(1);
+		expect(ui.calls).toHaveLength(1);
+		expect(ui.calls[0][1]).toContain("repo delete");
+	});
+
+	test("2. dangerous op + forceDangerous + ui declined → throws, exec not called", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		const ui = recordingUI(false);
+		await expect(
+			runGh({ subcommand: "repo delete", forceDangerous: true }, exec, undefined, ui),
+		).rejects.toThrow(/declined/);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("3. dangerous op + forceDangerous without ui → runs (headless back-compat)", async () => {
+		const exec = makeFakeExec({ stdout: "ok", code: 0 });
+		const res = await runGh({ subcommand: "repo delete", forceDangerous: true }, exec);
+		expect(res.isError).toBe(false);
+	});
+
+	test("4. api DELETE + forceDangerous + ui declined → blocked (H1 regression test)", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		const ui = recordingUI(false);
+		await expect(
+			runGh(
+				{ subcommand: "api", args: { method: "DELETE" }, forceDangerous: true } as GhParams,
+				exec,
+				undefined,
+				ui,
+			),
+		).rejects.toThrow(/declined/);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("5. safe op does not trigger ui.confirm", async () => {
+		const exec = makeFakeExec({ stdout: "ok", code: 0 });
+		const ui = recordingUI(true);
+		await runGh({ subcommand: "pr list" }, exec, undefined, ui);
+		expect(ui.calls).toHaveLength(0);
 	});
 });
 

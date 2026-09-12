@@ -20,7 +20,7 @@ The `gh` tool takes:
 - `jq` (optional string) — jq expression to filter/project JSON output (translates to `--jq expr`). Requires `jsonFields` to produce JSON output; `--json` always precedes `--jq`.
 - `limit` (optional integer) — maximum number of results (translates to `--limit N`).
 - `timeoutSeconds` (optional, default 30, max 120) — command timeout.
-- `forceDangerous` (optional boolean) — opt-in for destructive commands (`repo delete`, `release delete`, `codespace delete`). Requires explicit user confirmation.
+- `forceDangerous` (optional boolean) — opt-in for dangerous commands (`repo delete`, `release delete`, `codespace delete`, mutating `gh api` calls, `extension install/upgrade`, `codespace ssh/cp`, `alias set/delete`, `config set`). The runtime additionally shows a confirmation dialog to the user before executing; the flag alone does not bypass the guard.
 
 ### Call shape
 
@@ -109,6 +109,8 @@ This produces `gh pr list --repo owner/repo --json number,title,state,author --j
 ### Raw API
 
 - `api ENDPOINT` — raw GitHub REST/GraphQL API call (`args: { method: "GET" }`; `subcommand: "api repos/owner/repo/issues"`).
+- **Read-only by default**: only `GET` requests are allowed without opt-in. Any mutating call (POST/PUT/PATCH/DELETE via `-X`/`--method`, body-carrying flags like `-f`/`-F`/`--input`, and `api graphql`) is treated as dangerous and requires `forceDangerous: true` plus user confirmation.
+- **Token redaction**: credential-shaped strings (gh CLI tokens, fine-grained PATs) are redacted from tool output before it enters the model context.
 
 ### Full subcommand surface
 
@@ -137,8 +139,9 @@ For any subcommand not listed, run `gh <subcommand> --help` via bash to see its 
 
 - **`args` is an object, never an array** — pass `{ state: "open" }`, not `["--state","open"]`. The tool tolerates an array but it's not the correct shape.
 - **Never nest parameters inside `args`** — `subcommand`, `jsonFields`, `jq`, `repo`, `limit` are top-level siblings of `args`, not keys inside it.
-- **`repo delete`, `release delete`, and `codespace delete` are refused** by the tool unless `forceDangerous: true` is set. Always confirm with the user before using it — these operations are unrecoverable.
+- **`repo delete`, `release delete`, `codespace delete`, `extension install/upgrade`, `codespace ssh/cp`, `alias set/delete`, `config set`, and mutating `gh api` calls are refused** by the tool unless `forceDangerous: true` is set — and the runtime then asks the user to confirm via a dialog before the command runs. Always explain what the command does before calling.
 - **Auth failures** — if the tool returns "not authenticated", tell the user to run `gh auth login` via bash. Do NOT retry the tool in a loop.
+- **Never read credentials** — do not call `gh auth token` or `gh auth status --show-token`. Tokens are redacted from output, and reading them is a dangerous operation that requires opt-in and user confirmation.
 - **gh not installed** — if the tool reports `gh` is not on PATH, tell the user to install it from https://cli.github.com/ or via `brew install gh`.
 - **`--json` must precede `--jq`** — the tool handles this automatically (jsonFields → `--json`, then jq → `--jq`), but if you pass raw args via the `args` map, ensure you don't inject `--jq` before `--json`.
 - **Use `jsonFields` + `jq` for structured output** — the default text output is hard to parse. Pass `jsonFields: ["number", "title", "state"]` and optionally a `jq` expression for clean, parseable results.

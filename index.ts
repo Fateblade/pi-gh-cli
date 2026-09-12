@@ -9,8 +9,96 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 
-/** Commands that are destructive/unrecoverable — refused unless forceDangerous is set. */
-const DANGEROUS_COMMANDS = ["repo delete", "release delete", "codespace delete"];
+/**
+ * Subcommand word-pairs that are destructive or open a code-execution / config-
+ * tampering path — refused unless forceDangerous is set AND the user confirms
+ * via the runtime dialog.
+ */
+const DANGEROUS_COMMANDS = [
+	"repo delete",
+	"release delete",
+	"codespace delete",
+	// Arbitrary code execution / shell access.
+	"extension install",
+	"extension upgrade",
+	"codespace ssh",
+	"codespace cp",
+	// Command/config tampering.
+	"alias set",
+	"alias delete",
+	"config set",
+];
+
+/** gh api HTTP methods that change remote state. */
+const DESTRUCTIVE_API_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+/** gh api flags that imply a POST body (data-carrying requests). */
+const API_BODY_FLAGS = new Set(["f", "F", "field", "raw-field", "input"]);
+
+/**
+ * Find the first dangerous operation the params would execute, or null when the
+ * call is safe. Covers:
+ * - destructive gh subcommand pairs (see DANGEROUS_COMMANDS)
+ * - `gh api` calls whose effective HTTP method mutates state (POST/PUT/PATCH/DELETE,
+ *   explicit via -X/--method, or implied by data flags and `api graphql`)
+ */
+export function findDangerousOperation(params: GhParams): string | null {
+	const words = params.subcommand.trim().toLowerCase().split(/\s+/);
+	for (let i = 0; i < words.length - 1; i++) {
+		const pair = `${words[i]} ${words[i + 1]}`;
+		if (DANGEROUS_COMMANDS.includes(pair)) {
+			return pair;
+		}
+	}
+
+	if (words[0] === "api") {
+		const method = detectApiMethod(params);
+		if (method !== null && DESTRUCTIVE_API_METHODS.has(method)) {
+			return `api ${method}`;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Determine the effective HTTP method of a `gh api` call.
+ * Returns "GET" when no mutating signal is present, or the explicit method.
+ * `gh api` defaults to POST when body-carrying flags (-f/-F/--input/...) are
+ * passed, and `api graphql` always POSTs.
+ */
+function detectApiMethod(params: GhParams): string {
+	// Explicit -X/--method in the subcommand string (e.g. "api -X DELETE repos/x/y").
+	const tokens = params.subcommand.trim().split(/\s+/);
+	for (let i = 1; i < tokens.length - 1; i++) {
+		const t = tokens[i].toLowerCase();
+		if (t === "-x" || t === "--method") {
+			return tokens[i + 1].toUpperCase();
+		}
+		if (t.startsWith("--method=")) {
+			return t.slice("--method=".length).toUpperCase();
+		}
+	}
+
+	// Method/body flags from the args map (single value or array form).
+	let bodyFlag = false;
+	if (params.args && typeof params.args === "object") {
+		for (const [key, value] of Object.entries(params.args)) {
+			const k = key.toLowerCase().replace(/^-+/, "");
+			if (k === "x" || k === "method") {
+				if (typeof value === "string") return value.toUpperCase();
+				if (Array.isArray(value) && typeof value[0] === "string") return value[0].toUpperCase();
+			}
+			if (API_BODY_FLAGS.has(k) && value !== false && value !== null && value !== undefined) {
+				bodyFlag = true;
+			}
+		}
+	}
+
+	if (tokens[1] && tokens[1].toLowerCase() === "graphql") return "POST";
+	if (bodyFlag) return "POST";
+	return "GET";
+}
 
 /** Regex matching gh's not-authenticated error messages. */
 const NOT_AUTHED = /not logged in|authentication required|auth.*fail/i;
@@ -219,23 +307,39 @@ export function buildArgv(params: RawGhParams): string[] {
 }
 
 /**
- * Guard against destructive gh operations that are hard or impossible to
- * reverse. The tool refuses these unless the caller explicitly sets
- * `forceDangerous: true`, which keeps the LLM from nuking a repo or release
- * by accident.
+ * Guard against dangerous gh operations: destructive subcommands, mutating raw
+ * API calls, and code-execution paths. Refused unless the caller explicitly sets
+ * `forceDangerous: true` — and even then runGh additionally asks the user for
+ * confirmation via the runtime dialog before executing.
  */
 export function assertSafeCommand(params: GhParams): void {
-	const words = params.subcommand.trim().toLowerCase().split(/\s+/);
-	for (let i = 0; i < words.length - 1; i++) {
-		const pair = `${words[i]} ${words[i + 1]}`;
-		if (DANGEROUS_COMMANDS.includes(pair)) {
-			if (params.forceDangerous === true) return;
-			throw new Error(
-				`Refusing \`${pair}\` from the gh tool — this operation is unrecoverable. ` +
-					"To override, set `forceDangerous: true` and confirm with the user first.",
-			);
-		}
+	const danger = findDangerousOperation(params);
+	if (danger === null || params.forceDangerous === true) return;
+	throw new Error(
+		`Refusing \`${danger}\` from the gh tool — this operation is destructive or enables arbitrary code execution. ` +
+			"To override, set `forceDangerous: true` and confirm with the user first.",
+	);
+}
+
+/**
+ * Patterns for credential-shaped strings (gh CLI OAuth/user/server tokens and
+ * fine-grained PATs) replaced before tool output enters model context.
+ */
+const SECRET_PATTERNS: { pattern: RegExp; replacement: string }[] = [
+	{ pattern: /gh[pousr]_[A-Za-z0-9]{20,}/g, replacement: "gh*_REDACTED" },
+	{ pattern: /github_pat_[A-Za-z0-9_]{20,}/g, replacement: "github_pat_REDACTED" },
+];
+
+/**
+ * Redact credential-shaped strings from gh output so a leaked token (e.g. via
+ * `gh auth token` or `gh auth status --show-token`) never reaches model context.
+ */
+export function redactSecrets(text: string): string {
+	let result = text;
+	for (const { pattern, replacement } of SECRET_PATTERNS) {
+		result = result.replace(pattern, replacement);
 	}
+	return result;
 }
 
 /**
@@ -244,8 +348,8 @@ export function assertSafeCommand(params: GhParams): void {
  */
 export function formatOutput(stdout: string, stderr: string): string {
 	const chunks: string[] = [];
-	if (stdout.trim().length > 0) chunks.push(stdout.trimEnd());
-	if (stderr.trim().length > 0) chunks.push(`stderr:\n${stderr.trimEnd()}`);
+	if (stdout.trim().length > 0) chunks.push(redactSecrets(stdout.trimEnd()));
+	if (stderr.trim().length > 0) chunks.push(`stderr:\n${redactSecrets(stderr.trimEnd())}`);
 	return chunks.join("\n\n") || "(no output)";
 }
 
@@ -259,15 +363,23 @@ export type GhExec = (
 	options: { signal?: AbortSignal; timeout?: number },
 ) => Promise<ExecResult>;
 
+/** Minimal UI surface used by runGh for enforced dangerous-command confirmation. */
+export type ConfirmUI = { confirm(title: string, message: string): Promise<boolean> };
+
 /**
  * Core execution logic, separated from the Pi tool wiring so it can be tested
  * with an injected `exec` (the only system boundary). Returns the same shape
  * as a Pi tool result.
+ *
+ * `ui` is the runtime confirmation dialog; when provided, dangerous operations
+ * require an explicit user confirmation even after `forceDangerous: true` is
+ * set — the flag alone no longer bypasses the guard.
  */
 export async function runGh(
 	rawParams: RawGhParams,
 	exec: GhExec,
 	signal?: AbortSignal,
+	ui?: ConfirmUI,
 ): Promise<{
 	content: { type: "text"; text: string }[];
 	details: Record<string, unknown>;
@@ -281,6 +393,19 @@ export async function runGh(
 		throw new Error("Pass a gh subcommand, for example `subcommand: 'repo list'` or `subcommand: 'pr list'`.");
 	}
 	assertSafeCommand(params);
+
+	// Enforced confirmation: forceDangerous opts in, but the user must also
+	// approve via the runtime dialog — the flag alone does not bypass the guard.
+	const danger = findDangerousOperation(params);
+	if (danger !== null && ui) {
+		const confirmed = await ui.confirm(
+			"Run dangerous gh command?",
+			`The gh tool is about to run \`${danger}\`, which is destructive or enables arbitrary code execution. Approve?`,
+		);
+		if (!confirmed) {
+			throw new Error(`User declined confirmation for \`${danger}\`. The command was not run.`);
+		}
+	}
 
 	const argv = buildArgv(params);
 	const timeoutSeconds = Math.min(Math.max(params.timeoutSeconds ?? 30, 1), 120);
@@ -389,7 +514,7 @@ Key patterns:
 - List PRs: \`subcommand: "pr list"\`, \`args: { state: "open" }\`, \`limit: 10\`.
 - Structured output: \`jsonFields: ["number", "title", "state"]\` → \`--json number,title,state\`. Use \`jq\` to filter/project.
 - Target a repo: \`repo: "owner/repo"\` → \`--repo owner/repo\`.
-- Destructive ops (\`repo delete\`, \`release delete\`, \`codespace delete\`) require \`forceDangerous: true\` and explicit user confirmation.
+- Destructive ops (\`repo delete\`, \`release delete\`, \`codespace delete\`, mutating \`gh api\` calls, \`extension install/upgrade\`, \`codespace ssh/cp\`, \`alias set/delete\`, \`config set\`) require \`forceDangerous: true\` AND an explicit user confirmation via the runtime dialog — the flag alone is not enough.
 
 If the tool reports you are not authenticated, run \`gh auth login\` via bash.`;
 
@@ -415,7 +540,7 @@ export default function ghExtension(pi: ExtensionAPI) {
 			"All params are top-level siblings: subcommand (e.g. 'pr list'), args (object of flags), jsonFields, jq, repo, limit. " +
 			"Never nest subcommand/jsonFields/repo/jq/limit inside args — args is a flat key/value object of flags only.\n" +
 			"Example call shape:\n" + GH_CALL_EXAMPLE_JSON + "\n" +
-			"Destructive operations (repo delete, release delete, codespace delete) require `forceDangerous: true`.",
+			"Destructive operations (repo delete, release delete, codespace delete, mutating gh api calls, extension install/upgrade, codespace ssh/cp, alias set/delete, config set) require `forceDangerous: true` plus an explicit user confirmation dialog.",
 		promptSnippet:
 			"Interact with GitHub (repos, PRs, issues, releases, workflows, gists) via the gh CLI.",
 		promptGuidelines: [
@@ -423,7 +548,7 @@ export default function ghExtension(pi: ExtensionAPI) {
 			"All params are top-level siblings: subcommand, args, jsonFields, jq, repo, limit, forceDangerous. Never nest one inside another.",
 			"`args` is a key/value object of flags only (e.g. {state: \"open\", web: true}), never an array, and never contains subcommand/jsonFields/repo/jq/limit.",
 			"Use `jsonFields` + `jq` for structured output when you need to parse results programmatically.",
-			"Destructive operations (`repo delete`, `release delete`, `codespace delete`) require `forceDangerous: true`. Always confirm with the user before using it.",
+			"Destructive operations (`repo delete`, `release delete`, `codespace delete`, mutating `gh api` calls, `extension install/upgrade`, `codespace ssh/cp`, `alias set/delete`, `config set`) require `forceDangerous: true`. The runtime will additionally ask the user to confirm — always explain what the command does before calling.",
 			"If the tool reports you are not authenticated, tell the user to run `gh auth login`.",
 		],
 		parameters: Type.Object({
@@ -470,12 +595,12 @@ export default function ghExtension(pi: ExtensionAPI) {
 			),
 			forceDangerous: Type.Optional(
 				Type.Boolean({
-					description: "Opt-in flag to allow destructive commands (repo delete, release delete, codespace delete). Requires explicit user confirmation.",
+					description: "Opt-in flag for dangerous commands (repo delete, release delete, codespace delete, mutating gh api calls, extension install/upgrade, codespace ssh/cp, alias set/delete, config set). The user is still asked to confirm via a dialog before execution.",
 				}),
 			),
 		}),
-		async execute(_toolCallId, params: RawGhParams, signal) {
-			return runGh(params, (cmd, args, opts) => pi.exec(cmd, args, opts), signal);
+		async execute(_toolCallId, params: RawGhParams, signal, _onUpdate, ctx) {
+			return runGh(params, (cmd, args, opts) => pi.exec(cmd, args, opts), signal, ctx?.ui);
 		},
 	});
 }

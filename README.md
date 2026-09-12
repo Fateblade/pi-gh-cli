@@ -21,7 +21,8 @@ A [pi coding agent](https://github.com/earendil-works/pi-mono) extension that wr
 - a bundled `SKILL.md` documenting the tool and common `gh` commands
 - per-turn prompt guidance when a prompt mentions GitHub, PRs, issues, repos, releases, workflows, or gists
 - graceful detection of the "not authenticated" failure with actionable guidance
-- a safety guard that refuses `repo delete`, `release delete`, and `codespace delete` (unrecoverable) unless `forceDangerous: true` is set
+- a safety guard that refuses dangerous operations — `repo delete`, `release delete`, `codespace delete`, `extension install/upgrade`, `codespace ssh/cp`, `alias set/delete`, `config set`, and mutating `gh api` calls (POST/PUT/PATCH/DELETE, body-carrying requests, `api graphql`) — unless `forceDangerous: true` is set, and even then only after the user confirms via the runtime dialog
+- token redaction: credential-shaped strings (gh tokens, fine-grained PATs) are stripped from tool output before entering model context
 
 ## Why not MCP?
 
@@ -57,7 +58,7 @@ pi install git:github.com/sfroment/pi-gh-cli
 | `jq` | `string` | jq expression to filter JSON output (→ `--jq expr`). |
 | `limit` | `integer` | Maximum results (→ `--limit N`). |
 | `timeoutSeconds` | `integer` | Command timeout (default 30, max 120). |
-| `forceDangerous` | `boolean` | Opt-in for destructive commands (`repo delete`, `release delete`, `codespace delete`). |
+| `forceDangerous` | `boolean` | Opt-in for dangerous commands (`repo delete`, `release delete`, `codespace delete`, mutating `gh api` calls, `extension install/upgrade`, `codespace ssh/cp`, `alias set/delete`, `config set`). The user is still asked to confirm via a dialog before execution. |
 
 ## Examples
 
@@ -82,6 +83,16 @@ View a specific issue:
   "args": { "comments": true }
 }
 ```
+
+## Security
+
+The tool is read-first by default:
+
+- Destructive and code-execution operations (`repo delete`, `release delete`, `codespace delete`, `extension install/upgrade`, `codespace ssh/cp`, `alias set/delete`, `config set`) are refused unless `forceDangerous: true` is set.
+- Mutating raw API calls (`gh api` with POST/PUT/PATCH/DELETE, body-carrying flags, or `api graphql`) are gated the same way; read-only `GET` calls need no opt-in.
+- Even with `forceDangerous: true`, the runtime shows a confirmation dialog and the user must approve before the command runs.
+- Credential-shaped strings (gh tokens, fine-grained PATs) are redacted from tool output before entering model context.
+- `gh` runs via an argv array (no shell interpolation), and output is truncated to 2000 lines / 50 KB.
 
 ## Development
 

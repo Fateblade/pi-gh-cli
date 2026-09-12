@@ -21,14 +21,16 @@ jobs:
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@21025c705c08248db411dc16f3619e6b5f9ea21a # v2
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      # Only auto-merge non-major (patch/minor) updates.
-      # Major version bumps still require manual review.
-      - name: Enable auto-merge for non-major updates
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+      # Only auto-merge patch updates. Minor/major updates require manual review:
+      # this workflow auto-publishes to npm on push to main (release.yml), so
+      # auto-merging minor dependency bumps would let a compromised dependency
+      # release reach npm with no human in the loop.
+      - name: Enable auto-merge for patch updates
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
           PR_URL: "${{ github.event.pull_request.html_url }}"

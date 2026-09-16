@@ -15,6 +15,42 @@ const DANGEROUS_COMMANDS = ["repo delete", "release delete", "codespace delete"]
 /** Regex matching gh's not-authenticated error messages. */
 const NOT_AUTHED = /not logged in|authentication required|auth.*fail/i;
 
+/**
+ * gh subcommands whose `<verb> view` form does NOT accept --limit
+ * (only the list/search forms do). Passing --limit there fails with
+ * "unknown flag: --limit", which gives the model nothing to recover with.
+ * `codespace view`, `ruleset view`, and `project view` verified against the
+ * real gh CLI — they exist and take no --limit.
+ */
+const NO_LIMIT_SUBCOMMANDS = new Set([
+	"pr view",
+	"issue view",
+	"run view",
+	"release view",
+	"repo view",
+	"gist view",
+	"codespace view",
+	"workflow view",
+	"ruleset view",
+	"project view",
+]);
+
+/**
+ * View pairs whose view form supports `--json` (verified against the real
+ * gh binary, v2.100: `gh run view --help` lists `--json fields`; note older
+ * gh releases lacked --json on run view). Used to tailor the guard's retry
+ * suggestion — suggesting jsonFields to a pair without --json support would
+ * just trade one unknown-flag error for another.
+ */
+const VIEW_PAIRS_WITH_JSON = new Set([
+	"pr view",
+	"issue view",
+	"run view",
+	"release view",
+	"repo view",
+	"codespace view",
+]);
+
 export type GhParams = {
 	subcommand: string;
 	args?: Record<string, string | number | boolean | string[] | null | undefined>;
@@ -211,11 +247,60 @@ export function buildArgv(params: RawGhParams): string[] {
 	if (normalized.jq) {
 		argv.push("--jq", normalized.jq);
 	}
-	if (normalized.limit !== undefined && normalized.limit !== null) {
+	if (typeof normalized.limit === "number") {
 		argv.push("--limit", String(normalized.limit));
 	}
 
 	return argv;
+}
+
+/**
+ * Reject `limit` on gh commands that do not accept it. Only list-style
+ * commands take `--limit`; the `view` forms reject it with
+ * "unknown flag: --limit". Fail fast with the working form instead.
+ *
+ * Reads the typed `params.limit` plus a flag-shaped `args.limit` — including
+ * `--`-prefixed object keys, which buildArgv passes through verbatim. The
+ * normalizer deliberately converts a mis-typed nested `limit` into an args
+ * flag, and models echo flag names from error text, so both shapes must be
+ * guarded or the raw CLI error leaks through.
+ */
+export function assertLimitUsage(params: GhParams): void {
+	const args = params.args ?? {};
+	// Nullish/false args.limit would mask a sibling "--limit" key that the
+	// serializer still emits — fall through to the dash-prefixed key.
+	const argsLimit =
+		args.limit === undefined || args.limit === null || args.limit === false
+			? args["--limit"]
+			: args.limit;
+	// `--limit` (or `--limit=N`) can also be embedded directly in the
+	// subcommand string, which the serializer splits verbatim into argv —
+	// and as an args-object key with the value inline (`{"--limit=3": true}`),
+	// which the serializer passes through verbatim. Scan both the same way.
+	const words = params.subcommand.trim().toLowerCase().split(/\s+/);
+	const flagLooksLikeLimit = (token: string) =>
+		token === "--limit" || token.startsWith("--limit=");
+	const subLimit = words.some(flagLooksLikeLimit);
+	const argsKeyLimit = Object.entries(args).some(([k, v]) => {
+		if (v === false || v === null || v === undefined) return false; // serializer drops these
+		return flagLooksLikeLimit(k.startsWith("--") ? k : `--${k}`);
+	});
+	const limit =
+		params.limit ?? (argsLimit as unknown) ?? (subLimit || argsKeyLimit ? "present" : undefined);
+	if (limit === undefined || limit === null || limit === false) return;
+	for (let i = 0; i < words.length - 1; i++) {
+		const pair = `${words[i]} ${words[i + 1]}`;
+		if (NO_LIMIT_SUBCOMMANDS.has(pair)) {
+			const retryForm = VIEW_PAIRS_WITH_JSON.has(pair)
+				? `subcommand: "${pair} <id>" with the fields in jsonFields`
+				: `subcommand: "${pair} <id>" (this view form has no --json; read its plain output)`;
+			throw new Error(
+				`\`${pair}\` does not accept --limit (the CLI rejects it with "unknown flag: --limit") — only list-style commands do. ` +
+				`Working form: fetch the item directly, e.g. ${retryForm}; ` +
+				`or use the list form (e.g. "${words[i]} list") with limit.`,
+		);
+		}
+	}
 }
 
 /**
@@ -281,6 +366,7 @@ export async function runGh(
 		throw new Error("Pass a gh subcommand, for example `subcommand: 'repo list'` or `subcommand: 'pr list'`.");
 	}
 	assertSafeCommand(params);
+	assertLimitUsage(params);
 
 	const argv = buildArgv(params);
 	const timeoutSeconds = Math.min(Math.max(params.timeoutSeconds ?? 30, 1), 120);
@@ -383,7 +469,7 @@ ${GH_CALL_EXAMPLE_JSON}
 - \`jsonFields\` (top-level): string array for --json output.
 - \`jq\` (top-level): jq filter expression.
 - \`repo\` (top-level): target repo as owner/repo.
-- \`limit\` (top-level): max results.
+- \`limit\` (top-level): max results. Only valid on list-style commands (e.g. \`pr list\`); \`view\` commands reject it with "unknown flag: --limit" — the tool refuses it with the working form.
 
 Key patterns:
 - List PRs: \`subcommand: "pr list"\`, \`args: { state: "open" }\`, \`limit: 10\`.

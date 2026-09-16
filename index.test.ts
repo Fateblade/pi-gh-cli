@@ -1,4 +1,4 @@
-import { assertSafeCommand, buildArgv, formatOutput, runGh, GH_GUIDANCE, GH_CALL_EXAMPLE, GH_ARGS_DESCRIPTION, GH_SUBCOMMAND_DESCRIPTION, type ExecResult, type GhExec, type GhParams } from "./index.ts";
+import { assertLimitUsage, assertSafeCommand, buildArgv, formatOutput, runGh, GH_GUIDANCE, GH_CALL_EXAMPLE, GH_ARGS_DESCRIPTION, GH_SUBCOMMAND_DESCRIPTION, type ExecResult, type GhExec, type GhParams } from "./index.ts";
 import { describe, expect, mock, test } from "bun:test";
 
 describe("buildArgv", () => {
@@ -100,10 +100,10 @@ describe("buildArgv mode#1 (array args)", () => {
 		expect(
 			buildArgv({
 				subcommand: "repo",
-				args: ["view", "sfroment/herdr-git-detail", "--json", "description,repositoryTopics,url,visibility"],
+				args: ["view", "cli/cli", "--json", "description,repositoryTopics,url,visibility"],
 				jsonFields: ["description", "repositoryTopics", "url", "visibility"],
 			}),
-		).toEqual(["repo", "view", "sfroment/herdr-git-detail", "--json", "description,repositoryTopics,url,visibility"]);
+		).toEqual(["repo", "view", "cli/cli", "--json", "description,repositoryTopics,url,visibility"]);
 	});
 
 	test("A1.2 array args alone with --json (no top-level jsonFields) — promoted from array", () => {
@@ -124,11 +124,11 @@ describe("buildArgv mode#2 (nested args)", () => {
 		expect(
 			buildArgv({
 				args: {
-					subcommand: "repo view sfroment/herdr-git-detail",
+					subcommand: "repo view cli/cli",
 					jsonFields: ["description", "repositoryTopics", "url", "visibility"],
 				},
 			}),
-		).toEqual(["repo", "view", "sfroment/herdr-git-detail", "--json", "description,repositoryTopics,url,visibility"]);
+		).toEqual(["repo", "view", "cli/cli", "--json", "description,repositoryTopics,url,visibility"]);
 	});
 
 	test("A2.2 nested repo+limit in args are harvested to top-level", () => {
@@ -155,6 +155,152 @@ describe("buildArgv mode#2 (nested args)", () => {
 		expect(
 			buildArgv({ args: { subcommand: "pr list", limit: "5", state: "open" } }),
 		).toEqual(["pr", "list", "--limit", "5", "--state", "open"]);
+	});
+});
+
+describe("assertLimitUsage", () => {
+	test("pr view with limit is refused with the working form", () => {
+		expect(() => assertLimitUsage({ subcommand: "pr view 123", limit: 3 })).toThrow(
+			/pr view does not accept --limit|unknown flag/,
+		);
+	});
+
+	test("issue view with limit is refused", () => {
+		expect(() => assertLimitUsage({ subcommand: "issue view 42", limit: 5 })).toThrow(
+			/does not accept --limit/,
+		);
+	});
+
+	test("pr list with limit is allowed", () => {
+		expect(() => assertLimitUsage({ subcommand: "pr list", limit: 10 })).not.toThrow();
+	});
+
+	test("run view with limit is refused", () => {
+		expect(() => assertLimitUsage({ subcommand: "run view 987", limit: 1 })).toThrow(
+			/does not accept --limit/,
+		);
+	});
+
+	test("repo list with limit is allowed", () => {
+		expect(() => assertLimitUsage({ subcommand: "repo list", limit: 5 })).not.toThrow();
+	});
+
+	test("no limit never throws", () => {
+		expect(() => assertLimitUsage({ subcommand: "pr view 123" })).not.toThrow();
+	});
+
+	test("flag-shaped args.limit on a view command is refused (mis-shape bypass fix)", () => {
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123", args: { limit: "5" } }),
+		).toThrow(/does not accept --limit/);
+	});
+
+	test("dash-prefixed '--limit' args key on a view command is refused", () => {
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123", args: { "--limit": "3" } }),
+		).toThrow(/does not accept --limit/);
+	});
+
+	test("dash-prefixed bare '--limit' flag on a view command is refused", () => {
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123", args: { "--limit": true } }),
+		).toThrow(/does not accept --limit/);
+	});
+
+	test("nullish/false args.limit no longer masks a sibling '--limit' key", () => {
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123", args: { limit: false, "--limit": "3" } }),
+		).toThrow(/does not accept --limit/);
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123", args: { limit: null, "--limit": "3" } }),
+		).toThrow(/does not accept --limit/);
+	});
+
+	test("args key with inline value ('--limit=3': true) is refused on view commands", () => {
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123", args: { "--limit=3": true } }),
+		).toThrow(/does not accept --limit/);
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123", args: { "limit=3": true } }),
+		).toThrow(/does not accept --limit/);
+		// same key on a list command is fine
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr list", args: { "--limit=3": true } }),
+		).not.toThrow();
+		// serializer-dropped values don't count
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123", args: { "--limit=3": false } }),
+		).not.toThrow();
+	});
+
+	test("'--limit' embedded in the subcommand string is refused", () => {
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123 --limit 3" }),
+		).toThrow(/does not accept --limit/);
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr view 123 --limit=3" }),
+		).toThrow(/does not accept --limit/);
+		// a list command with an embedded --limit is fine
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr list --limit 5" }),
+		).not.toThrow();
+	});
+
+	test("'--limit' on a list command is allowed through (guard scoped to view pairs)", () => {
+		expect(() =>
+			assertLimitUsage({ subcommand: "pr list", args: { "--limit": 3 } }),
+		).not.toThrow();
+	});
+
+	test("limit: false neither triggers the guard nor serializes to argv", () => {
+		expect(() => assertLimitUsage({ subcommand: "pr view 123", limit: false as never })).not.toThrow();
+		expect(buildArgv({ subcommand: "pr list", limit: false as never })).toEqual(["pr", "list"]);
+	});
+
+	test("ruleset view and project view are refused", () => {
+		expect(() => assertLimitUsage({ subcommand: "ruleset view 7", limit: 1 })).toThrow(
+			/does not accept --limit/,
+		);
+		expect(() => assertLimitUsage({ subcommand: "project view 3", limit: 1 })).toThrow(
+			/does not accept --limit/,
+		);
+	});
+
+	test("release/repo/gist/codespace/workflow view pairs are refused", () => {
+		for (const pair of ["release", "repo", "gist", "codespace", "workflow"]) {
+			expect(() => assertLimitUsage({ subcommand: `${pair} view x`, limit: 2 })).toThrow(
+				/does not accept --limit/,
+			);
+		}
+	});
+
+	test("jsonless pairs suggest plain output, json-capable pairs suggest jsonFields", () => {
+		try {
+			assertLimitUsage({ subcommand: "gist view abc", limit: 2 });
+			throw new Error("expected assertLimitUsage to throw");
+		} catch (e) {
+			expect((e as Error).message).toContain("no --json");
+		}
+		try {
+			assertLimitUsage({ subcommand: "pr view 123", limit: 2 });
+			throw new Error("expected assertLimitUsage to throw");
+		} catch (e) {
+			expect((e as Error).message).toContain("jsonFields");
+			expect((e as Error).message).not.toContain("no --json");
+		}
+	});
+
+	test("adjacent-pair scan: pair fires wherever it appears; wrong order does not", () => {
+		// The pair fires even mid-subcommand (same adjacent-scan design as
+		// assertSafeCommand; no real gh command surface has these pairs later).
+		expect(() => assertLimitUsage({ subcommand: "secret pr view", limit: 1 })).toThrow(
+			/does not accept --limit/,
+		);
+		expect(() => assertLimitUsage({ subcommand: "pr view extra words", limit: 1 })).toThrow(
+			/does not accept --limit/,
+		);
+		// Non-adjacent / reversed words do not form a pair.
+		expect(() => assertLimitUsage({ subcommand: "view pr", limit: 1 })).not.toThrow();
 	});
 });
 
@@ -301,6 +447,11 @@ describe("GH_GUIDANCE content", () => {
 	test("A4.5 embeds the flat example", () => {
 		expect(GH_GUIDANCE).toContain(JSON.stringify(GH_CALL_EXAMPLE, null, 2));
 	});
+
+	test("A4.6 documents that only list-style commands accept limit", () => {
+		expect(GH_GUIDANCE).toContain("Only valid on list-style commands");
+		expect(GH_GUIDANCE).toContain("unknown flag: --limit");
+	});
 });
 
 /**
@@ -427,23 +578,23 @@ describe("runGh tolerance", () => {
 		const exec = makeFakeExec({ stdout: "ok", code: 0 });
 		const res = await runGh({
 			subcommand: "repo",
-			args: ["view", "sfroment/herdr-git-detail", "--json", "description,repositoryTopics,url,visibility"],
+			args: ["view", "cli/cli", "--json", "description,repositoryTopics,url,visibility"],
 			jsonFields: ["description", "repositoryTopics", "url", "visibility"],
 		}, exec);
 		expect(res.isError).toBe(false);
-		expect(exec.calls[0][1]).toEqual(["repo", "view", "sfroment/herdr-git-detail", "--json", "description,repositoryTopics,url,visibility"]);
+		expect(exec.calls[0][1]).toEqual(["repo", "view", "cli/cli", "--json", "description,repositoryTopics,url,visibility"]);
 	});
 
 	test("A3.2 mode#2 nested args → correct argv passed to exec, isError false", async () => {
 		const exec = makeFakeExec({ stdout: "ok", code: 0 });
 		const res = await runGh({
 			args: {
-				subcommand: "repo view sfroment/herdr-git-detail",
+				subcommand: "repo view cli/cli",
 				jsonFields: ["description", "repositoryTopics", "url", "visibility"],
 			},
 		}, exec);
 		expect(res.isError).toBe(false);
-		expect(exec.calls[0][1]).toEqual(["repo", "view", "sfroment/herdr-git-detail", "--json", "description,repositoryTopics,url,visibility"]);
+		expect(exec.calls[0][1]).toEqual(["repo", "view", "cli/cli", "--json", "description,repositoryTopics,url,visibility"]);
 	});
 
 	test("A3.3 dangerous command nested in args is still refused", async () => {
@@ -451,6 +602,61 @@ describe("runGh tolerance", () => {
 		await expect(
 			runGh({ args: { subcommand: "repo delete" } }, exec),
 		).rejects.toThrow(/repo delete/);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("A3.4 pr view with top-level limit is refused before exec", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		await expect(
+			runGh({ subcommand: "pr view 123", limit: 3 }, exec),
+		).rejects.toThrow(/does not accept --limit/);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("A3.6 array-args --limit token on a view command is refused after normalization", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		await expect(
+			runGh({ subcommand: "pr", args: ["view", "123", "--limit", "3"] }, exec),
+		).rejects.toThrow(/does not accept --limit/);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("A3.10 pr list with embedded --limit passes through to exec untouched", async () => {
+		const exec = makeFakeExec({ stdout: "[]", code: 0 });
+		const res = await runGh({ subcommand: "pr list --limit 5" }, exec);
+		expect(res.isError).toBe(false);
+		expect(exec.calls[0][1]).toEqual(["pr", "list", "--limit", "5"]);
+	});
+
+	test("A3.9 --limit embedded in the subcommand string on a view command is refused before exec", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		await expect(
+			runGh({ subcommand: "pr view 123 --limit 3" }, exec),
+		).rejects.toThrow(/does not accept --limit/);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("A3.8 dash-prefixed --limit key on a view command is refused before exec", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		await expect(
+			runGh({ subcommand: "pr view 123", args: { "--limit": "3" } }, exec),
+		).rejects.toThrow(/does not accept --limit/);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("A3.7 string-typed nested limit on a view command is refused (flag-shaped bypass fix)", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		await expect(
+			runGh({ args: { subcommand: "pr view 123", limit: "5" } }, exec),
+		).rejects.toThrow(/does not accept --limit/);
+		expect(exec.calls).toHaveLength(0);
+	});
+
+	test("A3.5 pr view with nested limit in args is refused before exec", async () => {
+		const exec = makeFakeExec({ stdout: "", code: 0 });
+		await expect(
+			runGh({ args: { subcommand: "pr view 123", limit: 3 } }, exec),
+		).rejects.toThrow(/does not accept --limit/);
 		expect(exec.calls).toHaveLength(0);
 	});
 });
@@ -488,7 +694,7 @@ describe("integration (real gh)", () => {
 			subcommand: "pr list",
 			args: { state: "open", limit: 1 },
 			jsonFields: ["number"],
-			repo: "Koyeb/api.koyeb.com",
+			repo: "cli/cli",
 		}, realExec);
 		expect(res.isError).toBe(false);
 	});

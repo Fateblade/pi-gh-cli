@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `assertLimitUsage` guard: `limit` on `view` commands (`pr`, `issue`, `run`, `release`, `repo`, `gist`, `codespace`, `workflow`, `ruleset`, `project` view) is refused with a working-form error instead of the CLI's bare "unknown flag: --limit" (flag-shaped `args.limit` included; retry suggestion tailored per pair — jsonFields where the view supports `--json`, plain output otherwise).
+
+### Changed
+
+- `limit` guidance in the tool description, prompt guidelines, and skill now states that only list-style commands accept `--limit`.
+- Removed environment-specific references from docs and packaging (author email domain).
+- Made `scripts/link-pi-deps.sh` portable (PI_RUNTIME_DIR override + `npm root -g`, no hardcoded paths).
+- Regenerated `bun.lock` against the public npm registry (format v2, no registry URLs); CI and release workflows bumped to bun 1.4 for the lockfile format, with a Type-check step (`tsc --noEmit`, pinned `typescript` devDependency) added to both.
+- Tool description, prompt guidelines, schema description, `GH_GUIDANCE`,
+  `SKILL.md`, and `README.md` updated to document the expanded guard list,
+  the confirmation dialog, and the `gh api` read-only-by-default policy.
+- Tests: new coverage for the api-method guard, expanded dangerous list,
+  redaction, and confirmation-dialog flow (decline blocks execution without
+  invoking the CLI).
+
 ### Security (audit fixes)
 
 - **Dangerous-command guard expanded and hardened** (audit H1, M2):
@@ -32,15 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restricted to patch updates only (minor/major require manual review, since
   the release workflow auto-publishes to npm); all GitHub Actions are pinned
   to commit SHAs instead of movable version tags.
-
-### Changed
-
-- Tool description, prompt guidelines, schema description, `GH_GUIDANCE`,
-  `SKILL.md`, and `README.md` updated to document the expanded guard list,
-  the confirmation dialog, and the `gh api` read-only-by-default policy.
-- Tests: new coverage for the api-method guard, expanded dangerous list,
-  redaction, and confirmation-dialog flow (decline blocks execution without
-  invoking the CLI).
 
 ## [1.0.0] - 2026-08-05
 

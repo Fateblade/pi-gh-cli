@@ -104,6 +104,15 @@ bun test          # pretest links pi runtime deps automatically
 bunx tsc --noEmit # type-check
 ```
 
+Releases are tag-driven. Bump `version` in `package.json`, then push a matching tag:
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+The tag creates a GitHub Release. This fork does not publish to npm.
+
 ## License
 
 GPL-3.0

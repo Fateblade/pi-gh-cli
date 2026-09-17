@@ -25,9 +25,9 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-      # Only auto-merge patch updates. Minor/major updates require manual review:
-      # pushes to main trigger the release workflow, so auto-merging a compromised
-      # dependency bump would cut a release with no human in the loop.
+      # Only auto-merge patch updates. Minor/major updates require manual review.
+      # Releases are tag-driven (release.yml), but keeping minor/major bumps out
+      # of the default branch without review preserves a human gate on upgrades.
       - name: Enable auto-merge for patch updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
         env:

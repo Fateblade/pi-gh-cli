@@ -61,6 +61,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Release only, `prepublishOnly` was removed, and the README marks the project
   as a fork of `sfroment/pi-gh-cli`.
 
+### Release process
+
+- Releases are now **tag-driven**: pushing a `v*` tag creates the GitHub Release
+  and the tag name is the version.
+- Removed the `run_number`-based scheme. It derived the tag from
+  `package.json` MAJOR.MINOR plus the workflow run number, so it ignored the
+  manual `v1.1.0` tag and produced `v1.0.2` on the next merge (regressing below
+  `v1.1.0` and colliding with upstream's inherited `v1.0.x` tags).
+- The erroneous `v1.0.2` release and tag were removed.
+
 ## [1.0.0] - 2026-08-05
 
 ### Added

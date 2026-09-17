@@ -3,14 +3,14 @@
   "version": "1.0.0",
   "description": "Pi extension wrapping the GitHub gh CLI as a single typed tool (direct CLI, not MCP).",
   "license": "GPL-3.0",
-  "author": "Sacha Froment <sacha.froment@mistral.ai>",
-  "homepage": "https://github.com/sfroment/pi-gh-cli",
+  "author": "Sacha Froment (https://sacha42.com)",
+  "homepage": "https://github.com/Fateblade/pi-gh-cli",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sfroment/pi-gh-cli.git"
+    "url": "git+https://github.com/Fateblade/pi-gh-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/sfroment/pi-gh-cli/issues"
+    "url": "https://github.com/Fateblade/pi-gh-cli/issues"
   },
   "keywords": [
     "pi-package",
@@ -33,8 +33,7 @@
   "scripts": {
     "pretest": "./scripts/link-pi-deps.sh",
     "test": "bun test",
-    "test:watch": "bun test --watch",
-    "prepublishOnly": "./scripts/link-pi-deps.sh && bun test"
+    "test:watch": "bun test --watch"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -42,9 +41,10 @@
     "typebox": "*"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.84.0",
-    "@earendil-works/pi-coding-agent": "^0.84.0",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@earendil-works/pi-coding-agent": "^0.85.1",
     "@types/bun": "latest",
-    "typebox": "^1.3.9"
+    "typebox": "^1.3.9",
+    "typescript": "^5"
   }
 }

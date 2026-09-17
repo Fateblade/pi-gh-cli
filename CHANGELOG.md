@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `assertLimitUsage` guard: `limit` on `view` commands (`pr`, `issue`, `run`, `release`, `repo`, `gist`, `codespace`, `workflow`, `ruleset`, `project` view) is refused with a working-form error instead of the CLI's bare "unknown flag: --limit" (flag-shaped `args.limit` included; retry suggestion tailored per pair — jsonFields where the view supports `--json`, plain output otherwise).
+
+### Changed
+
+- `limit` guidance in the tool description, prompt guidelines, and skill now states that only list-style commands accept `--limit`.
+- Removed environment-specific references from docs and packaging (author email domain).
+- Made `scripts/link-pi-deps.sh` portable (PI_RUNTIME_DIR override + `npm root -g`, no hardcoded paths).
+- Regenerated `bun.lock` against the public npm registry (format v2, no registry URLs); CI and release workflows bumped to bun 1.4 for the lockfile format, with a Type-check step (`tsc --noEmit`, pinned `typescript` devDependency) added to both.
+- Tool description, prompt guidelines, schema description, `GH_GUIDANCE`,
+  `SKILL.md`, and `README.md` updated to document the expanded guard list,
+  the confirmation dialog, and the `gh api` read-only-by-default policy.
+- Tests: new coverage for the api-method guard, expanded dangerous list,
+  redaction, and confirmation-dialog flow (decline blocks execution without
+  invoking the CLI).
+
 ### Security (audit fixes)
 
 - **Dangerous-command guard expanded and hardened** (audit H1, M2):
@@ -33,14 +50,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the release workflow auto-publishes to npm); all GitHub Actions are pinned
   to commit SHAs instead of movable version tags.
 
-### Changed
+### Fork
 
-- Tool description, prompt guidelines, schema description, `GH_GUIDANCE`,
-  `SKILL.md`, and `README.md` updated to document the expanded guard list,
-  the confirmation dialog, and the `gh api` read-only-by-default policy.
-- Tests: new coverage for the api-method guard, expanded dangerous list,
-  redaction, and confirmation-dialog flow (decline blocks execution without
-  invoking the CLI).
+- Synced with upstream through `f4d29f4`: brings the `--limit` guard for `view`
+  commands (`30082a3`), the dev-dependency bumps, and the Dependabot
+  `fetch-metadata` v3 bump. Conflicts resolved: kept this fork's SHA-pinned
+  Actions policy, merged both CHANGELOG entry sets, and fixed an `args` test
+  that failed the newly added `tsc --noEmit` gate.
+- This fork no longer publishes to npm: the release workflow creates a GitHub
+  Release only, `prepublishOnly` was removed, and the README marks the project
+  as a fork of `sfroment/pi-gh-cli`.
 
 ## [1.0.0] - 2026-08-05
 

@@ -1,15 +1,18 @@
-# pi-gh-cli
+# pi-gh-cli (Fateblade fork)
 
-[![CI](https://github.com/sfroment/pi-gh-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/sfroment/pi-gh-cli/actions/workflows/ci.yml)
-[![Release](https://github.com/sfroment/pi-gh-cli/actions/workflows/release.yml/badge.svg)](https://github.com/sfroment/pi-gh-cli/actions/workflows/release.yml)
-[![npm version](https://img.shields.io/npm/v/@sfroment/pi-gh-cli.svg?cacheSeconds=120)](https://www.npmjs.com/package/@sfroment/pi-gh-cli)
-[![npm downloads](https://img.shields.io/npm/dm/@sfroment/pi-gh-cli.svg?cacheSeconds=120)](https://www.npmjs.com/package/@sfroment/pi-gh-cli)
-[![npm bundle size](https://img.shields.io/bundlephobia/min/@sfroment/pi-gh-cli.svg?cacheSeconds=120)](https://bundlephobia.com/package/@sfroment/pi-gh-cli)
-[![GitHub Release](https://img.shields.io/github/v/release/sfroment/pi-gh-cli.svg?cacheSeconds=120)](https://github.com/sfroment/pi-gh-cli/releases)
-[![GitHub stars](https://img.shields.io/github/stars/sfroment/pi-gh-cli.svg?cacheSeconds=120)](https://github.com/sfroment/pi-gh-cli/stargazers)
-[![GitHub last commit](https://img.shields.io/github/last-commit/sfroment/pi-gh-cli.svg?cacheSeconds=120)](https://github.com/sfroment/pi-gh-cli/commits)
-[![GitHub commits since latest release](https://img.shields.io/github/commits-since/sfroment/pi-gh-cli/latest.svg?cacheSeconds=120)](https://github.com/sfroment/pi-gh-cli/releases)
-[![license](https://img.shields.io/npm/l/@sfroment/pi-gh-cli.svg?cacheSeconds=120)](https://github.com/sfroment/pi-gh-cli/blob/main/LICENSE)
+> **This is a fork of [`sfroment/pi-gh-cli`](https://github.com/sfroment/pi-gh-cli).**
+> It tracks upstream and adds a stricter security posture plus fork-specific
+> packaging (this fork does **not** publish to npm). Install from this fork:
+> `pi install git:github.com/Fateblade/pi-gh-cli`. Upstream is the canonical
+> source — see the [Links](#links) section.
+
+[![CI](https://github.com/Fateblade/pi-gh-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Fateblade/pi-gh-cli/actions/workflows/ci.yml)
+[![Release](https://github.com/Fateblade/pi-gh-cli/actions/workflows/release.yml/badge.svg)](https://github.com/Fateblade/pi-gh-cli/actions/workflows/release.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/Fateblade/pi-gh-cli.svg?cacheSeconds=120)](https://github.com/Fateblade/pi-gh-cli/releases)
+[![GitHub stars](https://img.shields.io/github/stars/Fateblade/pi-gh-cli.svg?cacheSeconds=120)](https://github.com/Fateblade/pi-gh-cli/stargazers)
+[![GitHub last commit](https://img.shields.io/github/last-commit/Fateblade/pi-gh-cli.svg?cacheSeconds=120)](https://github.com/Fateblade/pi-gh-cli/commits)
+[![GitHub commits since latest release](https://img.shields.io/github/commits-since/Fateblade/pi-gh-cli/latest.svg?cacheSeconds=120)](https://github.com/Fateblade/pi-gh-cli/releases)
+[![license](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](https://github.com/Fateblade/pi-gh-cli/blob/main/LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-fd4b3a?logo=bun&logoColor=white)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/lang-TypeScript-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
@@ -44,7 +47,7 @@ Drop the extension into `~/.pi/agent/extensions/` (global) or `.pi/extensions/` 
 Or install from git:
 
 ```bash
-pi install git:github.com/sfroment/pi-gh-cli
+pi install git:github.com/Fateblade/pi-gh-cli
 ```
 
 ## Tool parameters
@@ -56,7 +59,7 @@ pi install git:github.com/sfroment/pi-gh-cli
 | `repo` | `string` | Target repository as `owner/repo` (→ `--repo owner/repo`). |
 | `jsonFields` | `string[]` | Fields to return as JSON (→ `--json field1,field2`). |
 | `jq` | `string` | jq expression to filter JSON output (→ `--jq expr`). |
-| `limit` | `integer` | Maximum results (→ `--limit N`). |
+| `limit` | `integer` | Maximum results (→ `--limit N`). **Only list-style commands accept it** — view commands reject it; the tool refuses such calls with a working form. |
 | `timeoutSeconds` | `integer` | Command timeout (default 30, max 120). |
 | `forceDangerous` | `boolean` | Opt-in for dangerous commands (`repo delete`, `release delete`, `codespace delete`, mutating `gh api` calls, `extension install/upgrade`, `codespace ssh/cp`, `alias set/delete`, `config set`). The user is still asked to confirm via a dialog before execution. |
 
@@ -107,6 +110,7 @@ GPL-3.0
 
 ## Links
 
-- **Author:** [Sacha Froment](https://sacha42.com)
-- **Source:** <https://github.com/sfroment/pi-gh-cli>
-- **Issues:** <https://github.com/sfroment/pi-gh-cli/issues>
+- **This fork:** <https://github.com/Fateblade/pi-gh-cli>
+- **Fork issues:** <https://github.com/Fateblade/pi-gh-cli/issues>
+- **Upstream source:** <https://github.com/sfroment/pi-gh-cli>
+- **Upstream author:** [Sacha Froment](https://sacha42.com)

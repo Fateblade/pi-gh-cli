@@ -18,7 +18,7 @@ The `gh` tool takes:
 - `repo` (optional string) — target repository as `owner/repo` (translates to `--repo owner/repo`).
 - `jsonFields` (optional string[]) — GitHub fields to return as JSON (translates to `--json field1,field2,...`). Must be set before `jq`.
 - `jq` (optional string) — jq expression to filter/project JSON output (translates to `--jq expr`). Requires `jsonFields` to produce JSON output; `--json` always precedes `--jq`.
-- `limit` (optional integer) — maximum number of results (translates to `--limit N`).
+- `limit` (optional integer) — maximum number of results (translates to `--limit N`). **Only list-style commands accept it**; the `view` forms (`pr`, `issue`, `run`, `release`, `repo`, `gist`, `codespace`, `workflow`, `ruleset`, `project`) reject `--limit` with "unknown flag: --limit" — the tool refuses those calls with a working form instead (jsonFields where the view supports `--json`, plain output otherwise).
 - `timeoutSeconds` (optional, default 30, max 120) — command timeout.
 - `forceDangerous` (optional boolean) — opt-in for dangerous commands (`repo delete`, `release delete`, `codespace delete`, mutating `gh api` calls, `extension install/upgrade`, `codespace ssh/cp`, `alias set/delete`, `config set`). The runtime additionally shows a confirmation dialog to the user before executing; the flag alone does not bypass the guard.
 
@@ -117,7 +117,7 @@ This produces `gh pr list --repo owner/repo --json number,title,state,author --j
 The categories above cover the common cases. gh has many more top-level subcommands — the full list (run `gh --help` via bash for the authoritative version):
 
 - `gist` — manage gists (create, list, view, clone, edit, delete).
-- `codespace` — manage codespaces (create, list, ssh, cp, stop, delete).
+- `codespace` — manage codespaces (create, list, view, ssh, cp, stop, delete).
 - `secret` / `variable` — manage repo/org Actions secrets and variables.
 - `org` — organization management (list, members, teams).
 - `label` — manage repo labels (list, create, edit, delete, clone).

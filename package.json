@@ -1,6 +1,6 @@
 {
   "name": "@sfroment/pi-gh-cli",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Pi extension wrapping the GitHub gh CLI as a single typed tool (direct CLI, not MCP).",
   "license": "GPL-3.0",
   "author": "Sacha Froment (https://sacha42.com)",

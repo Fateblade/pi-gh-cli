@@ -1,8 +1,13 @@
 name: Release
 
+# Tag-driven: push a semver tag (e.g. `git tag v1.1.0 && git push origin v1.1.0`)
+# to cut a release. The tag name is the source of truth for the version — this
+# fork does not publish to npm, so there is no need to synthesize a unique
+# version per run (the previous `run_number` scheme could regress below a
+# manually created tag and collide with upstream's `v1.0.x` tags).
 on:
   push:
-    branches: [main]
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -43,21 +48,20 @@ jobs:
       - name: Verify extension compiles
         run: bun build index.ts --no-bundle --outfile /tmp/pi-gh-cli-build.js
 
-      - name: Compute version
-        id: ver
+      - name: Check tag against package.json version
         run: |
-          BASE=$(node -p "require('./package.json').version")
-          MAJOR=$(echo "${BASE}" | cut -d. -f1)
-          MINOR=$(echo "${BASE}" | cut -d. -f2)
-          VERSION="${MAJOR}.${MINOR}.${{ github.run_number }}"
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${PKG_VERSION}" != "${TAG_VERSION}" ]; then
+            echo "::warning::Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}. The tag is used as the release version; keep package.json in sync when you bump it."
+          fi
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.ver.outputs.tag }}" \
-            --target main \
-            --title "${{ steps.ver.outputs.tag }}" \
-            --notes "Auto-release from commit ${{ github.sha }}" \
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Release ${GITHUB_REF_NAME} (commit ${GITHUB_SHA})" \
             --latest

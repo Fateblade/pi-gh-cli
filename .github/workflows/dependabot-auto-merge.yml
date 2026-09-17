@@ -26,9 +26,8 @@ jobs:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
       # Only auto-merge patch updates. Minor/major updates require manual review:
-      # this workflow auto-publishes to npm on push to main (release.yml), so
-      # auto-merging minor dependency bumps would let a compromised dependency
-      # release reach npm with no human in the loop.
+      # pushes to main trigger the release workflow, so auto-merging a compromised
+      # dependency bump would cut a release with no human in the loop.
       - name: Enable auto-merge for patch updates
         if: steps.metadata.outputs.update-type == 'version-update:semver-patch'
         env:

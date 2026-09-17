@@ -50,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the release workflow auto-publishes to npm); all GitHub Actions are pinned
   to commit SHAs instead of movable version tags.
 
+### Fork
+
+- Synced with upstream through `f4d29f4`: brings the `--limit` guard for `view`
+  commands (`30082a3`), the dev-dependency bumps, and the Dependabot
+  `fetch-metadata` v3 bump. Conflicts resolved: kept this fork's SHA-pinned
+  Actions policy, merged both CHANGELOG entry sets, and fixed an `args` test
+  that failed the newly added `tsc --noEmit` gate.
+- This fork no longer publishes to npm: the release workflow creates a GitHub
+  Release only, `prepublishOnly` was removed, and the README marks the project
+  as a fork of `sfroment/pi-gh-cli`.
+
 ## [1.0.0] - 2026-08-05
 
 ### Added
